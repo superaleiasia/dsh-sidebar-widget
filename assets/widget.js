@@ -29,6 +29,7 @@
   var phase = 0
   var mounted = false
   var lastUsage = null
+  var cardEl = null
 
   function el(tag, cls, text) {
     var n = document.createElement(tag)
@@ -89,16 +90,29 @@
     '.panel button.primary{background:linear-gradient(180deg,#5b8cff,#4468e8);border-color:transparent;font-weight:600}' +
     '.panel button.ghost{opacity:.7}'
 
+  // v0.2.1：头像缩小 + 旋转光环裁切（旋转放到 overflow:hidden 容器里的伪元素，外溢不再压到时间）
+  var OVERRIDE = '.card{gap:8px;padding:12px 12px 10px;border-radius:16px}' +
+    '.avatar-wrap{position:relative;width:86px;height:86px;aspect-ratio:auto;max-height:86px;margin:2px auto 0;border-radius:999px;overflow:hidden;animation:none;padding:0;background:none;isolation:isolate}' +
+    '.avatar-wrap::before{content:"";position:absolute;inset:0;border-radius:999px;background:conic-gradient(from 0deg,#6f8cff,#b06cff,#4fd1e0,#6f8cff);animation:spin 16s linear infinite}' +
+    '.avatar-wrap::after{inset:2px;z-index:1}' +
+    '.avatar{position:absolute;inset:2px;width:calc(100% - 4px);height:calc(100% - 4px);transform:none;z-index:2}' +
+    '.hint{font-size:9.5px;padding:0 6px}' +
+    '.hh,.mm{font-size:30px}.ss{font-size:12px;transform:none}' +
+    '.date{font-size:11px}.status{font-size:11.5px;padding:6px 8px}' +
+    'canvas{height:52px}.bvalue .num{font-size:20px}' +
+    '.card.compact .date,.card.compact .pulse-head,.card.compact canvas{display:none}'
+
   function build() {
     var host = el('div')
     host.id = HOST_ID
-    host.style.cssText = 'display:flex;width:100%;margin:8px 0 6px;flex:0 0 auto;'
+    host.style.cssText = 'display:flex;width:100%;margin:6px 0 4px;flex:0 0 auto;min-height:0;position:relative;z-index:1;'
     shadow = host.attachShadow({ mode: 'open' })
     var style = document.createElement('style')
-    style.textContent = STYLE
+    style.textContent = STYLE + OVERRIDE
     shadow.appendChild(style)
 
     var card = el('div', 'card')
+    cardEl = card
     shadow.appendChild(card)
 
     var wrap = el('div', 'avatar-wrap')
@@ -555,6 +569,14 @@
     var width = column.getBoundingClientRect().width
     if (width < 150) { host.style.display = 'none'; return true }
     host.style.display = 'flex'
+    // 侧栏矮的时候自动进紧凑模式（收起日期 / 波形），避免把工作区列表挤掉或盖住设置
+    try {
+      var ch = column.getBoundingClientRect().height
+      if (cardEl) {
+        if (ch && ch < 820) cardEl.classList.add('compact')
+        else cardEl.classList.remove('compact')
+      }
+    } catch (err) {}
     if (host.parentElement !== column || host.nextElementSibling !== target.before) {
       if (target.before) column.insertBefore(host, target.before)
       else column.appendChild(host)
