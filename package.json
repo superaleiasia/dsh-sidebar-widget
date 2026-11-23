@@ -1,6 +1,6 @@
 {
   "name": "dsh-sidebar-widget",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "DSH 左侧栏挂件：可换头像、时钟、状态、心电图，以及真实 Token 用量（可折金额）",
   "type": "module",
   "main": "lib/index.js",

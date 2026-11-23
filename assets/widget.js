@@ -11,9 +11,10 @@
   var HOST_ID = 'dsh-sidebar-widget-host'
   var CONFIG = {
     status: '任务进行中…',
-    balance: '¥116.80',
-    balanceLabel: 'TOKEN 用量',
+    balance: '',
+    balanceLabel: '今日消耗',
     footerText: '正在记录今日 Token…',
+    autoPrice: true,
     showPulse: true,
     placement: 'auto',
     valueMode: 'usage',
@@ -68,7 +69,9 @@
     '.bvalue{display:flex;align-items:baseline;gap:4px;font-variant-numeric:tabular-nums}' +
     '.bvalue .cur{font-size:12px;opacity:.75}' +
     '.bvalue .num{font-size:23px;font-weight:600;letter-spacing:.5px}' +
+    '.c{font-size:30px;font-weight:600;line-height:1;opacity:.45;margin:0 1px}' +
     '.bfoot{font-size:10px;opacity:.42}' +
+    '.bmeta{font-size:10px;opacity:.55;display:none;letter-spacing:.3px}' +
     '.toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:11px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;z-index:20}' +
     '.toast.show{opacity:1}' +
     '.panel{position:absolute;inset:0;z-index:10;display:none;flex-direction:column;gap:7px;box-sizing:border-box;padding:12px;' +
@@ -97,7 +100,8 @@
     '.avatar-wrap::after{inset:2px;z-index:1}' +
     '.avatar{position:absolute;inset:2px;width:calc(100% - 4px);height:calc(100% - 4px);transform:none;z-index:2}' +
     '.hint{font-size:9.5px;padding:0 6px}' +
-    '.hh,.mm{font-size:30px}.ss{font-size:12px;transform:none}' +
+    '.hh,.mm{font-size:30px}.ss{font-size:12px;transform:none}.time{gap:1px}' +
+    '.status[hidden]{display:none}' +
     '.date{font-size:11px}.status{font-size:11.5px;padding:6px 8px}' +
     'canvas{height:52px}.bvalue .num{font-size:20px}' +
     '.card.compact .date,.card.compact .pulse-head,.card.compact canvas{display:none}'
@@ -128,10 +132,14 @@
 
     var time = el('div', 'time')
     var hh = el('span', 'hh', '--')
+    var c1 = el('span', 'c', ':')
     var mm = el('span', 'mm', '--')
+    var c2 = el('span', 'c', ':')
     var ss = el('span', 'ss', '--')
     time.appendChild(hh)
+    time.appendChild(c1)
     time.appendChild(mm)
+    time.appendChild(c2)
     time.appendChild(ss)
     card.appendChild(time)
 
@@ -139,6 +147,7 @@
     card.appendChild(date)
 
     var status = el('div', 'status')
+    status.hidden = true // 只有真的在跑任务时才显示（/dsh-sidebar/status.json）
     status.appendChild(el('span', 'dot'))
     var statusText = el('span', 'status-text', CONFIG.status)
     status.appendChild(statusText)
@@ -166,6 +175,8 @@
     balance.appendChild(bvalue)
     var foot = el('div', 'bfoot', CONFIG.footerText)
     balance.appendChild(foot)
+    var bmeta = el('div', 'bmeta', '')
+    balance.appendChild(bmeta)
     card.appendChild(balance)
 
     var toast = el('div', 'toast', '')
@@ -179,7 +190,7 @@
 
     rootEl = {
       host: host, card: card, wrap: wrap, img: img, hh: hh, mm: mm, ss: ss, date: date,
-      statusText: statusText, cur: cur, num: num, blabelText: blabelText, foot: foot,
+      statusText: statusText, status: status, cur: cur, num: num, blabelText: blabelText, foot: foot, bmeta: bmeta,
       toast: toast, file: file, canvas: canvas, balance: balance,
     }
 
@@ -278,7 +289,22 @@
     priceRow.appendChild(field('缓存价', iCache))
     priceRow.appendChild(field('输出价', iOut))
     panel.appendChild(priceRow)
-    panel.appendChild(el('div', 'bfoot', '单价单位：¥ / 百万 token；全为 0 时只显示 token 数'))
+
+    var autoCheck = el('label', 'check')
+    var iAuto = document.createElement('input')
+    iAuto.type = 'checkbox'
+    iAuto.checked = CONFIG.autoPrice !== false
+    autoCheck.appendChild(iAuto)
+    autoCheck.appendChild(el('span', '', '自动跟随官方峰谷价'))
+    panel.appendChild(autoCheck)
+    panel.appendChild(el('div', 'bfoot', '勾选后按 DeepSeek 官方价（工作日 9–12、14–18 峰价，其余谷价）计费；上面的单价只在取消勾选后生效。'))
+
+    function syncPriceDisabled() {
+      var d = iAuto.checked
+      ;[iIn, iCache, iOut].forEach(function (n) { n.disabled = d })
+    }
+    iAuto.addEventListener('change', syncPriceDisabled)
+    syncPriceDisabled()
 
     var check = el('label', 'check')
     var iShowPulse = document.createElement('input')
@@ -323,6 +349,7 @@
         valueMode: modeSelect.value,
         balance: iBalance.value,
         showPulse: iShowPulse.checked,
+        autoPrice: iAuto.checked,
         prices: {
           input: Number(iIn.value) || 0,
           cache: Number(iCache.value) || 0,
@@ -377,6 +404,8 @@
         iCache.value = String(p.cache || 0)
         iOut.value = String(p.output || 0)
         iShowPulse.checked = CONFIG.showPulse !== false
+        iAuto.checked = CONFIG.autoPrice !== false
+        iAuto.dispatchEvent(new Event('change'))
       },
     }
     return panelCtl
@@ -414,6 +443,55 @@
     return p(d.getHours()) + ':' + p(d.getMinutes())
   }
 
+  var usageAt = 0
+  var balanceInfo = null
+
+  function pad2(n) { return n < 10 ? '0' + n : String(n) }
+  function mmss(sec) {
+    var s = Math.max(0, Math.floor(sec))
+    var h = Math.floor(s / 3600)
+    var m = Math.floor((s % 3600) / 60)
+    var r = s % 60
+    return (h > 0 ? h + ':' + pad2(m) : String(m)) + ':' + pad2(r)
+  }
+
+  /** 底部小字：峰/谷 + 切换倒计时；余额另起一行（有才显示）。 */
+  function renderFoot(u) {
+    if (!rootEl) return
+    if (CONFIG.valueMode === 'manual' || !u) {
+      rootEl.foot.textContent = CONFIG.footerText
+      if (rootEl.bmeta) rootEl.bmeta.style.display = 'none'
+      return
+    }
+    var parts = []
+    if (u.autoPrice) {
+      var left = (Number(u.secondsLeft) || 0) - (Date.now() - usageAt) / 1000
+      var label = u.tier === 'peak' ? '峰价中' : '谷价中'
+      var to = u.tier === 'peak' ? '转谷价' : '转峰价'
+      parts.push(label + (u.nextSwitchAt ? ' · ' + mmss(left) + ' 后' + to : ''))
+    } else {
+      parts.push('自定义单价')
+    }
+    parts.push((u.requests || 0) + ' 次')
+    rootEl.foot.textContent = parts.join(' · ')
+    if (rootEl.bmeta) {
+      if (balanceInfo && balanceInfo.amount != null) {
+        var sym = (!balanceInfo.currency || balanceInfo.currency === 'CNY') ? '¥' : balanceInfo.currency + ' '
+        rootEl.bmeta.style.display = 'block'
+        rootEl.bmeta.textContent = '余额 ' + sym + Number(balanceInfo.amount).toFixed(2)
+      } else {
+        // 没有官方余额接口时，退回设置面板里的手填余额；都没填就整行隐藏
+        var manual = String(CONFIG.balance || '').replace(/^¥\s*/, '').trim()
+        if (manual && !isNaN(Number(manual))) {
+          rootEl.bmeta.style.display = 'block'
+          rootEl.bmeta.textContent = '余额 ¥' + Number(manual).toFixed(2) + '（手填）'
+        } else {
+          rootEl.bmeta.style.display = 'none'
+        }
+      }
+    }
+  }
+
   function renderValue() {
     if (!rootEl) return
     var u = lastUsage
@@ -422,16 +500,18 @@
       rootEl.cur.textContent = curSym
       rootEl.num.textContent = String(CONFIG.balance || '').replace(/^¥\s*/, '')
       rootEl.foot.textContent = CONFIG.footerText
+      if (rootEl.bmeta) rootEl.bmeta.style.display = 'none'
       return
     }
-    if (u.priced && u.cost > 0) {
+    if (u.priced) {
       rootEl.cur.textContent = curSym
-      rootEl.num.textContent = Number(u.cost).toFixed(2)
+      rootEl.num.textContent = Number(u.cost || 0).toFixed(2)
     } else {
       rootEl.cur.textContent = 'TOK'
       rootEl.num.textContent = formatTokens(u.tokens ? u.tokens.total : 0)
     }
-    rootEl.foot.textContent = (u.requests || 0) + ' 次请求 · 更新 ' + hhmm(u.updatedAt)
+    rootEl.blabelText.textContent = CONFIG.balanceLabel
+    renderFoot(u)
   }
 
   function applyConfig(cfg) {
@@ -457,7 +537,32 @@
       .then(function (j) {
         if (!j || !j.ok || !j.usage) return
         lastUsage = j.usage
+        usageAt = Date.now()
         renderValue()
+      })
+      .catch(function () {})
+  }
+
+  /** 真实运行状态（turn/start…turn/end）+ 官方余额。 */
+  function refreshStatus() {
+    fetch(API + '/status.json', { cache: 'no-store' })
+      .then(function (r) { return r.json() })
+      .then(function (j) {
+        if (!j || !j.ok) return
+        var running = j.running || {}
+        if (rootEl && rootEl.status) {
+          if (running.busy) {
+            rootEl.status.hidden = false
+            rootEl.statusText.textContent = CONFIG.status + (running.count > 1 ? ' ×' + running.count : '')
+          } else {
+            rootEl.status.hidden = true
+          }
+        }
+        var nextBalance = j.balance && j.balance.amount != null ? j.balance : null
+        if (JSON.stringify(nextBalance) !== JSON.stringify(balanceInfo)) {
+          balanceInfo = nextBalance
+          renderValue()
+        }
       })
       .catch(function () {})
   }
@@ -491,6 +596,7 @@
     rootEl.mm.textContent = pad(d.getMinutes())
     rootEl.ss.textContent = pad(d.getSeconds())
     rootEl.date.textContent = (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + WEEK[d.getDay()]
+    if (lastUsage) renderFoot(lastUsage)
   }
 
   function gauss(x, mu, sigma) { var d = (x - mu) / sigma; return Math.exp(-0.5 * d * d) }
@@ -617,8 +723,10 @@
     try { setupCanvas(); draw() } catch (err) {}
     refreshConfig()
     refreshUsage()
+    refreshStatus()
     setInterval(refreshConfig, 60000)
     setInterval(refreshUsage, 3000)
+    setInterval(refreshStatus, 3000)
   }
 
   function boot() {

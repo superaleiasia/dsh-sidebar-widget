@@ -63,10 +63,10 @@ if (rows.length !== 1 || !String(rows[0].text).includes('/dsh-sidebar/widget.js'
 else ok('桌面端 index-inject 行已登记')
 if (!taps.length || !String(taps[0]('<html><body></body></html>')).includes('/dsh-sidebar/widget.js')) fail('tapIndex')
 else ok('web 端 tapIndex 注入正常')
-for (const p of ['/dsh-sidebar/widget.js', '/dsh-sidebar/config.json', '/dsh-sidebar/usage.json', '/dsh-sidebar/avatar']) {
+for (const p of ['/dsh-sidebar/widget.js', '/dsh-sidebar/config.json', '/dsh-sidebar/usage.json', '/dsh-sidebar/status.json', '/dsh-sidebar/avatar']) {
   if (!routes.has(p)) fail('missing route ' + p)
 }
-if (!process.exitCode) ok('四条路由已注册')
+if (!process.exitCode) ok('五条路由已注册')
 if (typeof listeners.get('session/event') !== 'function') fail('session/event 未订阅')
 
 const call = async (p, method, body, headers) => {
@@ -84,7 +84,7 @@ res = await call('/dsh-sidebar/config.json', 'GET')
 if (res.status !== 200 || !JSON.parse(res.body.toString('utf8')).ok) fail('config get')
 else ok('config.json 读取正常')
 
-res = await call('/dsh-sidebar/config.json', 'POST', Buffer.from(JSON.stringify({ status: '写代码中…', valueMode: 'usage', prices: { input: 2, cache: 0.5, output: 8 } })))
+res = await call('/dsh-sidebar/config.json', 'POST', Buffer.from(JSON.stringify({ status: '写代码中…', valueMode: 'usage', autoPrice: false, prices: { input: 2, cache: 0.5, output: 8 } })))
 const cfg = JSON.parse(res.body.toString('utf8'))
 if (!cfg.ok || cfg.config.status !== '写代码中…' || cfg.config.prices.output !== 8) fail('config post: ' + res.body.toString('utf8'))
 else ok('config.json 写入正常（含单价归一化）')
@@ -103,6 +103,26 @@ else ok('用量累加正确（3000 in / 300 cache / 700 out）')
 const expectCost = (3000 * 2 + 300 * 0.5 + 700 * 8) / 1e6
 if (Math.abs(usage.cost - Math.round(expectCost * 10000) / 10000) > 1e-6) fail('usage cost: ' + usage.cost + ' vs ' + expectCost)
 else ok('单价折算正确（¥' + usage.cost + '）')
+
+res = await call('/dsh-sidebar/status.json', 'GET')
+const status = JSON.parse(res.body.toString('utf8'))
+if (res.status !== 200 || !status.ok || typeof status.running.busy !== 'boolean') fail('status: ' + res.body.toString('utf8'))
+else ok('status.json 正常（busy=' + status.running.busy + '）')
+
+listeners.get('session/event')({}, { type: 'turn/start', sessionId: 's1' })
+res = await call('/dsh-sidebar/status.json', 'GET')
+if (!JSON.parse(res.body.toString('utf8')).running.busy) fail('busy 未跟随 turn/start')
+else ok('busy 跟随 turn/start')
+listeners.get('session/event')({}, { type: 'turn/end', sessionId: 's1' })
+res = await call('/dsh-sidebar/status.json', 'GET')
+if (JSON.parse(res.body.toString('utf8')).running.busy) fail('busy 未跟随 turn/end')
+else ok('busy 跟随 turn/end')
+
+await call('/dsh-sidebar/config.json', 'POST', Buffer.from(JSON.stringify({ autoPrice: true })))
+res = await call('/dsh-sidebar/usage.json', 'GET')
+const auto = JSON.parse(res.body.toString('utf8')).usage
+if (auto.tier !== 'peak' && auto.tier !== 'valley') fail('tier 缺失: ' + res.body.toString('utf8'))
+else ok('峰谷档位 ' + auto.tier + '，下次切换 ' + auto.secondsLeft + 's')
 
 res = await call('/dsh-sidebar/usage.json', 'POST', Buffer.from(JSON.stringify({ reset: true })))
 const reset = JSON.parse(res.body.toString('utf8')).usage
