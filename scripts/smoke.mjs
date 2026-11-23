@@ -47,6 +47,7 @@ const root = {
   inject(deps, cb) {
     cb({
       webServer: {
+        register(route) { routes.set(route.path, route.handler); return () => routes.delete(route.path) },
         registerRoute(route) { routes.set(route.path, route.handler); return () => routes.delete(route.path) },
         tapIndex(fn) { taps.push(fn); return () => {} },
       },
