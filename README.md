@@ -1,29 +1,43 @@
-# dsh-sidebar-widget
+# 侧栏挂件 · dsh-sidebar-widget
 
-给 [DSH](https://github.com/deepseek-ai/deepseek-harness) 左侧栏加一张竖卡：动漫头像 + 时钟 + 日期 + 运行状态 + THINK MAX 心电波形 + **今日消耗 / 真实 Token 用量**（按 DeepSeek 官方峰谷价自动计价）。
+给 DSH 左侧栏加一张小卡片：头像、时钟、任务状态、**今天花了多少钱**，还有峰谷价倒计时。
 
-头像可换、**不限尺寸**（原图原样保存，不压缩不上限；只在显示时按圆形裁切）。
+![侧栏挂件](docs/shot-peak.png)
+
+不用开别的窗口——干活的时候瞄一眼侧栏，就知道这一轮任务是不是还在跑、今天消耗到多少、离谷价还有多久。
+
+## 这张卡片能做什么
+
+- **时钟**：大号时分，秒数跟在后面；下面是「11月23日 周一」。
+- **头像**：点一下或把图片拖进去就能换，**原图多大都行**（不压缩、不缩限，只在显示时圆形裁切）。
+- **任务状态**：「任务进行中…」+ 心电波形**只在真的有任务在跑时出现**，闲下来自动消失。
+- **今日消耗**：当天累计花费，按 DeepSeek 官方峰谷价自动计价；下面一行小字告诉你现在是峰价还是谷价、还有多久切换。
+- **余额**：配了 DeepSeek API Key 就显示官方账户余额，没有就用手填的数字（标「手填」）。
+- **右键卡片**：改状态文字、底部说明、数值标签、计价方式，或者把今天的用量清零。
+
+![设置面板](docs/shot-panel.png)
+
+卡片上的数字都来自 DSH 自己记录的每次请求用量（输入 / 缓存命中 / 输出），不是估算。
 
 ## 安装
 
-```bash
-# 从 npm 安装（发布后可用）
-dsh plugin --profile desktop add dsh-sidebar-widget
+需要 DSH 桌面版。装完**重启 DSH**，卡片出现在左侧栏最下方、设置按钮上面。
 
-# 直接从 GitHub 装（无需 npm 账号；已验证）
+```bash
+# 直接从 GitHub 装（推荐，无需 npm 账号）
 dsh plugin --profile desktop add https://codeload.github.com/superaleiasia/dsh-sidebar-widget/tar.gz/refs/heads/main
 
-# 或本机目录安装（开发用）
-dsh plugin --profile desktop add link:F:\\生活废话\\sidebar-widget
+# 本机目录安装（改代码时用）
+dsh plugin --profile desktop add link:F:\\path\\to\\dsh-sidebar-widget
 ```
 
-GitHub 装的是当时 main 的快照，仓库更新后重跑同一条命令即可升级。
+仓库更新后，重跑同一条命令就是升级。
 
-手动安装等价于三件事：
+如果手里没有 `dsh` 命令，手动安装等价于三件事：
 
-1. `~/.dsh/profiles/<profile>/package.json` 的 `dependencies` 里加 `"dsh-sidebar-widget": "<版本或 link:路径>"`
-2. 同一文件的 `dsh.profile.bundles` 数组里加 `"dsh-sidebar-widget"`
-3. profile 的 `cordis.patch.yml` 末尾加：
+1. `~/.dsh/profiles/<profile>/package.json` 的 `dependencies` 加 `"dsh-sidebar-widget": "https://codeload.github.com/superaleiasia/dsh-sidebar-widget/tar.gz/refs/heads/main"`
+2. 同一文件 `dsh.profile.bundles` 数组里加 `"dsh-sidebar-widget"`
+3. 在 profile 目录跑 `pnpm install`，再在 `cordis.patch.yml` 末尾加：
 
 ```yaml
 - insert:
@@ -31,78 +45,62 @@ GitHub 装的是当时 main 的快照，仓库更新后重跑同一条命令即�
       name: dsh-sidebar-widget
 ```
 
-装完**重启 DSH**。挂件出现在左侧栏最下方（设置按钮上方）；侧栏收起（只剩图标）时自动隐藏。
+## 换头像
 
-## 用法
+点头像选图，或者直接把图片拖到卡片上。支持 png / jpg / gif / webp / avif / bmp / svg，单张最大 64 MB。
 
-| 操作 | 效果 |
+原图存在 `~/.dsh/sidebar-widget/avatar.<扩展名>`，想换回来随时再点一次；设置面板里的按钮不会动头像。
+
+## 右键设置
+
+| 字段 | 作用 |
 | --- | --- |
-| 点头像 | 选图片更换 |
-| 拖图片到头像 | 直接更换 |
-| **右键卡片** | 打开设置面板（文案 / 数值来源 / 单价 / 峰谷价开关 / 手填余额 / 重置用量） |
-
-### 数值
-
-卡片底部默认显示**今日消耗金额**，数据来自 DSH 会话事件流里每条 `assistant/message` 的 `usage`：
-
-- `inputTokens`、`cacheReadTokens`、`outputTokens` 三项分别累计
-- 跨重启保留，按自然日自动归零（`~/.dsh/sidebar-widget/usage.json`）
-- 默认按 **DeepSeek 官方价**计价：工作日 9:00–12:00、14:00–18:00（北京时间）为峰价，其余时段、周末与法定节假日为谷价，峰价 = 谷价 × 2
-  - Flash：缓存 0.02 / 1、输入 1 / 2、输出 4 / 8（谷 / 峰，¥ 每百万 token）
-  - Pro：0.15 / 0.3、4.5 / 9、13.5 / 27
-  - 价格来源：[DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/quick_start/pricing)，每年 11 月按国务院安排补次年节假日
-- 金额在**每次请求结束时**按当时档位累加（改价不回溯，只影响之后的用量）
-- 底部小字实时显示「峰价中 · 0:23:45 后转谷价」这类倒计时；单价全为 0 时只显示 token 数
-- 设置里可以取消「自动跟随官方峰谷价」，改成手填单价；也可以切到「手填余额」直接写死数字
-
-### 状态 / 余额
-
-- 「任务进行中…」只在 DSH 真的在跑 turn 时出现（订阅 `turn/start` / `turn/end`），空闲时整行隐藏；多会话并行时显示 `×N`
-- 余额优先取 DSH 凭据里的 `DEEPSEEK_API_KEY` 调官方 `/user/balance`（缓存 60 秒）；没有 key 时退回设置面板里的手填余额（标「手填」），两者都没有就隐藏该行
-
-## 设置面板（右键卡片）
-
-| 字段 | 说明 |
-| --- | --- |
-| 状态文字 | 蓝点后面那句，默认「任务进行中…」 |
-| 底部说明 | 无用量数据时显示的文案 |
-| 数值标签 | 余额/用量上方的小标题 |
-| 数值来源 | 「真实 Token 用量」或「手填余额」 |
-| 手填余额 | 数值来源＝手填时生效 |
-| 自动跟随官方峰谷价 | 默认开；关掉后才用下面的手填单价 |
-| 输入/缓存/输出价 | ¥ / 百万 token，自动峰谷价关闭时生效 |
-| 手填余额 | 没有官方余额接口时显示的余额（标「手填」） |
-| 显示心电波形 | 关掉后 canvas 隐藏 |
+| 状态文字 | 蓝点后面那句话，默认「任务进行中…」 |
+| 底部说明 | 还没有用量时显示的文案 |
+| 数值标签 | 金额上方的小标题，默认「今日消耗」 |
+| 数值来源 | 真实 Token 用量 / 手填余额 |
+| 自动跟随官方峰谷价 | 默认开；关掉后才用下面三个单价 |
+| 输入 / 缓存 / 输出价 | ¥ 每百万 token，按需手填 |
+| 显示心电波形 | 不喜欢动的可以关掉 |
 | 重置今日用量 | 把当天累计清零 |
 
-保存后立即生效并写入 `~/.dsh/sidebar-widget/config.json`；也可以直接编辑这个文件（挂件每 60 秒重读）。
+保存立即生效，写在 `~/.dsh/sidebar-widget/config.json`，也可以直接改这个文件（60 秒内自动读到）。
 
-## 接口
+## 今日消耗怎么算
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/dsh-sidebar/widget.js` | 浏览器半侧脚本 |
-| GET/POST | `/dsh-sidebar/config.json` | 读取 / 合并写入配置 |
-| GET | `/dsh-sidebar/usage.json` | 今日用量（token 明细 + 今日消耗金额 + 峰谷档位与切换倒计时） |
-| POST | `/dsh-sidebar/usage.json` | `{"reset":true}` 重置今日用量 |
-| GET | `/dsh-sidebar/status.json` | 是否在跑任务（`running.busy/count`）+ 官方余额 |
-| GET/POST/DELETE | `/dsh-sidebar/avatar` | 取 / 传 / 复位头像 |
+- 时段：**工作日 9:00–12:00、14:00–18:00 为峰价**，其余时段、周末和法定节假日为谷价，峰价 = 谷价 × 2。
+- 价目：Flash 档 缓存 0.02 / 0.04、输入 1 / 2、输出 4 / 8；Pro 档 0.15 / 0.3、4.5 / 9、13.5 / 27（谷 / 峰，¥ 每百万 token）。
+- 每次请求结束时按当时的档位累加，改价不回溯，只影响之后的用量。
+- 卡片上的倒计时显示「峰价中 · 41:11 后转谷价」这样的剩余时间。
+- 用量按自然日归零，存在 `~/.dsh/sidebar-widget/usage.json`。
 
-所有接口只接受本机回环 Host 的同源请求。
+价格以 [DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) 为准；法定节假日表每年 11 月按国务院安排更新一次。
 
-## 开发
+## 常见问题
+
+**卡片没出现？**
+确认 DSH 已经重启过；侧栏被拖得很窄（小于 150px，只剩图标）时会自动隐藏。仍没有的话看 `~/.dsh/sidebar-widget/boot.log`，启动和路由注册都有记录。
+
+**任务在跑，但没有「任务进行中」？**
+状态只跟着 DSH 的 turn 事件走，得是当前 DSH 里真的在跑任务；第三方终端里跑的进程它看不见。
+
+**金额一直是 0？**
+今天还没有产生请求，或者用的是手填模式但没填数字。
+
+**只有时间，没有波形和日期？**
+侧栏高度不够时卡片会自动进入紧凑模式，只留最要紧的信息；把窗口拉高就回来。
+
+**余额显示「手填」？**
+DSH 里没有 `DEEPSEEK_API_KEY` 凭据时不会去调官方余额接口，用设置里填的数字兜底。
+
+## 卸载
 
 ```bash
-node scripts/smoke.mjs   # 假 ctx 跑一遍服务端：注入行、五条路由、配置、用量累加与计价、busy 联动、头像上传
+dsh plugin --profile desktop remove dsh-sidebar-widget
 ```
 
-改了 `assets/widget.js` 只需刷新页面（脚本按请求现读，不常驻缓存）；改了 `lib/index.js` 要重启 DSH。
+手动装的话，把上文三处改动删掉即可。数据留在 `~/.dsh/sidebar-widget/`，不要了可以直接删。
 
-## 原理
+## 许可
 
-- **注入**：桌面端走 `webserver/index-inject` 结构化行（内联 script 行，自带 onerror 吞错），web 端走 `webServer.tapIndex`；两条并存、各自去重。
-- **用量**：订阅 `session/event`，从 `assistant/message` 的 `usage` 累加并按当时峰谷档位折算金额；`outputTokens` 已含 `reasoningTokens`，不重复计。
-- **状态**：同一事件流里的 `turn/start` / `turn/end` 维护在跑会话集合；`busy` 即前端状态行是否显示。
-- **挂载**：在 `[data-sidebar-scrollport]` 与 `[data-slot="sidebar.settings"]` 的公共祖先（侧栏列）里，把卡片插到「设置」所在的顶层子节点之前；找不到锚点则退化成左下角固定卡片。
-
-MIT License.
+MIT © 2026 superaleiasia

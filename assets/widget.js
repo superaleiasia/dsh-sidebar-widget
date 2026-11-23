@@ -74,8 +74,10 @@
     '.bmeta{font-size:10px;opacity:.55;display:none;letter-spacing:.3px}' +
     '.toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:11px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;z-index:20}' +
     '.toast.show{opacity:1}' +
-    '.panel{position:absolute;inset:0;z-index:10;display:none;flex-direction:column;gap:7px;box-sizing:border-box;padding:12px;' +
-    'background:linear-gradient(160deg,rgba(30,33,43,.99),rgba(18,20,26,.99));overflow:auto;font-size:11px}' +
+    '.panel{position:fixed;z-index:2147483000;display:none;flex-direction:column;gap:7px;box-sizing:border-box;padding:12px;' +
+    'background:linear-gradient(160deg,rgba(30,33,43,.99),rgba(18,20,26,.99));overflow:auto;font-size:11px;width:240px;max-height:78vh;' +
+    'border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 18px 44px rgba(0,0,0,.6);' +
+    'color:var(--dsw-alias-label-primary,#eceef5);font-family:var(--ds-font-family,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif)}' +
     '.panel.show{display:flex}' +
     '.panel h4{margin:0 0 2px;font-size:11px;letter-spacing:1px;opacity:.55;font-weight:600;display:flex;justify-content:space-between;align-items:center}' +
     '.panel .x{cursor:pointer;font-size:14px;opacity:.5;padding:0 2px;line-height:1}' +
@@ -100,7 +102,7 @@
     '.avatar-wrap::after{inset:2px;z-index:1}' +
     '.avatar{position:absolute;inset:2px;width:calc(100% - 4px);height:calc(100% - 4px);transform:none;z-index:2}' +
     '.hint{font-size:9.5px;padding:0 6px}' +
-    '.hh,.mm{font-size:30px}.ss{font-size:12px;transform:none}.time{gap:1px}' +
+    '.hh,.mm{font-size:30px}.ss{font-size:13px;transform:none;opacity:.62;margin-left:4px}.time{gap:1px}' +
     '.status[hidden]{display:none}' +
     '.date{font-size:11px}.status{font-size:11.5px;padding:6px 8px}' +
     'canvas{height:52px}.bvalue .num{font-size:20px}' +
@@ -134,12 +136,10 @@
     var hh = el('span', 'hh', '--')
     var c1 = el('span', 'c', ':')
     var mm = el('span', 'mm', '--')
-    var c2 = el('span', 'c', ':')
     var ss = el('span', 'ss', '--')
     time.appendChild(hh)
     time.appendChild(c1)
     time.appendChild(mm)
-    time.appendChild(c2)
     time.appendChild(ss)
     card.appendChild(time)
 
@@ -326,7 +326,8 @@
     actions2.appendChild(reset)
     panel.appendChild(actions2)
 
-    card.appendChild(panel)
+    // 面板放成 shadow 根下的浮层：卡片自身有 backdrop-filter，会在卡片内部形成 fixed 包含块
+    shadow.appendChild(panel)
 
     function close() { panel.classList.remove('show') }
     x.addEventListener('click', close)
@@ -411,10 +412,33 @@
     return panelCtl
   }
 
+  function placePanel(panel) {
+    var w = 240
+    var r = rootEl.card.getBoundingClientRect()
+    var vw = window.innerWidth
+    var vh = window.innerHeight
+    panel.style.maxHeight = Math.round(Math.max(220, vh - 32)) + 'px'
+    // 优先放在卡片右侧（不遮侧栏），空间不够就放到卡片上方
+    if (r.right + 10 + w <= vw - 8) {
+      panel.style.left = Math.round(r.right + 10) + 'px'
+      panel.style.bottom = Math.round(Math.max(8, vh - r.bottom)) + 'px'
+    } else {
+      panel.style.left = Math.round(Math.max(8, Math.min(r.left, vw - w - 8))) + 'px'
+      panel.style.bottom = Math.round(Math.max(8, vh - r.top + 8)) + 'px'
+    }
+  }
+
   function openPanel() {
     var ctl = buildPanel()
     ctl.sync()
     ctl.panel.classList.add('show')
+    placePanel(ctl.panel)
+    if (!openPanel._bound) {
+      openPanel._bound = true
+      window.addEventListener('resize', function () {
+        if (panelCtl && panelCtl.panel.classList.contains('show')) placePanel(panelCtl.panel)
+      })
+    }
   }
 
   /* ---------------------------------------------------------------- 数据 */
