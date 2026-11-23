@@ -1,6 +1,7 @@
 /* dsh-sidebar-widget — 浏览器半侧：在 DSH 左侧栏里挂一张竖卡。
  * 头像点击/拖入即可更换（原图原样上传到 $DSH_HOME/sidebar-widget/avatar.<ext>，不限尺寸）。
- * 文案与余额来自 /dsh-sidebar/config.json，可热改。
+ * 数值来自 /dsh-sidebar/usage.json（真实 token 用量，可折金额）或手填余额；
+ * 右键卡片打开设置面板，直接改文案/单价，不用手编 json。
  */
 (function () {
   if (window.__dshSidebarWidget) return
@@ -11,10 +12,13 @@
   var CONFIG = {
     status: '任务进行中…',
     balance: '¥116.80',
-    balanceLabel: 'TOKEN 余量',
+    balanceLabel: 'TOKEN 用量',
     footerText: '正在记录今日 Token…',
     showPulse: true,
     placement: 'auto',
+    valueMode: 'usage',
+    currency: '¥',
+    prices: { input: 0, cache: 0, output: 0 },
   }
   var avatarVersion = String(Date.now())
   var shadow = null
@@ -24,6 +28,7 @@
   var raf = 0
   var phase = 0
   var mounted = false
+  var lastUsage = null
 
   function el(tag, cls, text) {
     var n = document.createElement(tag)
@@ -63,8 +68,26 @@
     '.bvalue .cur{font-size:12px;opacity:.75}' +
     '.bvalue .num{font-size:23px;font-weight:600;letter-spacing:.5px}' +
     '.bfoot{font-size:10px;opacity:.42}' +
-    '.toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:11px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap}' +
-    '.toast.show{opacity:1}'
+    '.toast{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);font-size:11px;padding:5px 10px;border-radius:999px;background:rgba(0,0,0,.72);color:#fff;opacity:0;transition:opacity .2s;pointer-events:none;white-space:nowrap;z-index:20}' +
+    '.toast.show{opacity:1}' +
+    '.panel{position:absolute;inset:0;z-index:10;display:none;flex-direction:column;gap:7px;box-sizing:border-box;padding:12px;' +
+    'background:linear-gradient(160deg,rgba(30,33,43,.99),rgba(18,20,26,.99));overflow:auto;font-size:11px}' +
+    '.panel.show{display:flex}' +
+    '.panel h4{margin:0 0 2px;font-size:11px;letter-spacing:1px;opacity:.55;font-weight:600;display:flex;justify-content:space-between;align-items:center}' +
+    '.panel .x{cursor:pointer;font-size:14px;opacity:.5;padding:0 2px;line-height:1}' +
+    '.panel label{display:flex;flex-direction:column;gap:3px}' +
+    '.panel label span{font-size:10px;opacity:.5;letter-spacing:.6px}' +
+    '.panel input[type=text],.panel input[type=number],.panel select{width:100%;box-sizing:border-box;font:inherit;font-size:11px;padding:4px 6px;border-radius:6px;' +
+    'border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.32);color:inherit;outline:none}' +
+    '.panel .row{display:flex;gap:6px}' +
+    '.panel .row label{flex:1}' +
+    '.panel .check{flex-direction:row;align-items:center;gap:6px;opacity:.85}' +
+    '.panel .check input{width:auto}' +
+    '.panel .actions{display:flex;gap:6px;margin-top:2px}' +
+    '.panel button{flex:1;font:inherit;font-size:11px;padding:6px 8px;border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,.14);' +
+    'background:rgba(255,255,255,.08);color:inherit}' +
+    '.panel button.primary{background:linear-gradient(180deg,#5b8cff,#4468e8);border-color:transparent;font-weight:600}' +
+    '.panel button.ghost{opacity:.7}'
 
   function build() {
     var host = el('div')
@@ -117,15 +140,18 @@
 
     var balance = el('div', 'balance')
     var blabel = el('div', 'blabel')
-    blabel.appendChild(el('span', '', CONFIG.balanceLabel))
+    var blabelText = el('span', '', CONFIG.balanceLabel)
+    blabel.appendChild(blabelText)
     blabel.appendChild(el('span', '', '▾'))
     balance.appendChild(blabel)
     var bvalue = el('div', 'bvalue')
-    bvalue.appendChild(el('span', 'cur', '¥'))
+    var cur = el('span', 'cur', '¥')
+    bvalue.appendChild(cur)
     var num = el('span', 'num', String(CONFIG.balance || '').replace(/^¥\s*/, ''))
     bvalue.appendChild(num)
     balance.appendChild(bvalue)
-    balance.appendChild(el('div', 'bfoot', CONFIG.footerText))
+    var foot = el('div', 'bfoot', CONFIG.footerText)
+    balance.appendChild(foot)
     card.appendChild(balance)
 
     var toast = el('div', 'toast', '')
@@ -137,7 +163,11 @@
     file.style.display = 'none'
     card.appendChild(file)
 
-    rootEl = { host: host, card: card, wrap: wrap, img: img, hh: hh, mm: mm, ss: ss, date: date, statusText: statusText, num: num, toast: toast, file: file, canvas: canvas }
+    rootEl = {
+      host: host, card: card, wrap: wrap, img: img, hh: hh, mm: mm, ss: ss, date: date,
+      statusText: statusText, cur: cur, num: num, blabelText: blabelText, foot: foot,
+      toast: toast, file: file, canvas: canvas, balance: balance,
+    }
 
     wrap.addEventListener('click', function () { rootEl.file.click() })
     file.addEventListener('change', function () {
@@ -154,8 +184,197 @@
       var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]
       if (f) upload(f)
     })
+
+    card.addEventListener('contextmenu', function (e) {
+      e.preventDefault()
+      e.stopPropagation()
+      openPanel()
+    })
+
     return host
   }
+
+  /* ------------------------------------------------------------ 设置面板 */
+
+  var panelCtl = null
+
+  function field(labelText, input) {
+    var l = el('label')
+    l.appendChild(el('span', '', labelText))
+    l.appendChild(input)
+    return l
+  }
+
+  function textInput(value) {
+    var i = document.createElement('input')
+    i.type = 'text'
+    i.value = value == null ? '' : String(value)
+    return i
+  }
+
+  function numInput(value) {
+    var i = document.createElement('input')
+    i.type = 'number'
+    i.step = 'any'
+    i.value = value == null ? '' : String(value)
+    return i
+  }
+
+  function buildPanel() {
+    if (panelCtl) return panelCtl
+    var card = rootEl.card
+    var panel = el('div', 'panel')
+
+    var title = el('h4')
+    title.appendChild(el('span', '', '挂件设置'))
+    var x = el('span', 'x', '✕')
+    title.appendChild(x)
+    panel.appendChild(title)
+
+    var iStatus = textInput(CONFIG.status)
+    var iFoot = textInput(CONFIG.footerText)
+    var iLabel = textInput(CONFIG.balanceLabel)
+    panel.appendChild(field('状态文字', iStatus))
+    panel.appendChild(field('底部说明', iFoot))
+    panel.appendChild(field('数值标签', iLabel))
+
+    var modeRow = el('div', 'row')
+    var modeSelect = document.createElement('select')
+    ;[['usage', '真实 Token 用量'], ['manual', '手填余额']].forEach(function (pair) {
+      var o = document.createElement('option')
+      o.value = pair[0]
+      o.textContent = pair[1]
+      modeSelect.appendChild(o)
+    })
+    modeSelect.value = CONFIG.valueMode || 'usage'
+    modeRow.appendChild(field('数值来源', modeSelect))
+    panel.appendChild(modeRow)
+
+    var iBalance = textInput(String(CONFIG.balance || ''))
+    var manualRow = field('手填余额（数值来源＝手填时生效）', iBalance)
+    manualRow.style.display = modeSelect.value === 'manual' ? 'flex' : 'none'
+    panel.appendChild(manualRow)
+
+    var priceRow = el('div', 'row')
+    var prices = CONFIG.prices || {}
+    var iIn = numInput(prices.input)
+    var iCache = numInput(prices.cache)
+    var iOut = numInput(prices.output)
+    priceRow.appendChild(field('输入价', iIn))
+    priceRow.appendChild(field('缓存价', iCache))
+    priceRow.appendChild(field('输出价', iOut))
+    panel.appendChild(priceRow)
+    panel.appendChild(el('div', 'bfoot', '单价单位：¥ / 百万 token；全为 0 时只显示 token 数'))
+
+    var check = el('label', 'check')
+    var iShowPulse = document.createElement('input')
+    iShowPulse.type = 'checkbox'
+    iShowPulse.checked = CONFIG.showPulse !== false
+    check.appendChild(iShowPulse)
+    check.appendChild(el('span', '', '显示心电波形'))
+    panel.appendChild(check)
+
+    var actions = el('div', 'actions')
+    var save = el('button', 'primary', '保存')
+    var cancel = el('button', 'ghost', '取消')
+    actions.appendChild(save)
+    actions.appendChild(cancel)
+    panel.appendChild(actions)
+
+    var actions2 = el('div', 'actions')
+    var reset = el('button', 'ghost', '重置今日用量')
+    actions2.appendChild(reset)
+    panel.appendChild(actions2)
+
+    card.appendChild(panel)
+
+    function close() { panel.classList.remove('show') }
+    x.addEventListener('click', close)
+    cancel.addEventListener('click', close)
+    modeSelect.addEventListener('change', function () {
+      manualRow.style.display = modeSelect.value === 'manual' ? 'flex' : 'none'
+    })
+    panel.addEventListener('contextmenu', function (e) { e.preventDefault() })
+    panel.addEventListener('click', function (e) { e.stopPropagation() })
+    panel.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') close()
+      e.stopPropagation()
+    })
+
+    save.addEventListener('click', function () {
+      var patch = {
+        status: iStatus.value,
+        footerText: iFoot.value,
+        balanceLabel: iLabel.value,
+        valueMode: modeSelect.value,
+        balance: iBalance.value,
+        showPulse: iShowPulse.checked,
+        prices: {
+          input: Number(iIn.value) || 0,
+          cache: Number(iCache.value) || 0,
+          output: Number(iOut.value) || 0,
+        },
+      }
+      save.disabled = true
+      fetch(API + '/config.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+        .then(function (r) { return r.json() })
+        .then(function (j) {
+          if (!j || !j.ok) throw new Error((j && j.error) || 'save failed')
+          applyConfig(j.config)
+          showToast('已保存')
+          close()
+          refreshUsage()
+        })
+        .catch(function (err) { showToast('保存失败：' + (err && err.message ? err.message : err)) })
+        .then(function () { save.disabled = false })
+    })
+
+    reset.addEventListener('click', function () {
+      fetch(API + '/usage.json', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reset: true }),
+      })
+        .then(function (r) { return r.json() })
+        .then(function (j) {
+          if (!j || !j.ok) throw new Error((j && j.error) || 'reset failed')
+          lastUsage = j.usage
+          renderValue()
+          showToast('今日用量已重置')
+        })
+        .catch(function (err) { showToast('重置失败：' + (err && err.message ? err.message : err)) })
+    })
+
+    panelCtl = {
+      panel: panel,
+      sync: function () {
+        iStatus.value = CONFIG.status || ''
+        iFoot.value = CONFIG.footerText || ''
+        iLabel.value = CONFIG.balanceLabel || ''
+        iBalance.value = String(CONFIG.balance || '')
+        modeSelect.value = CONFIG.valueMode || 'usage'
+        manualRow.style.display = modeSelect.value === 'manual' ? 'flex' : 'none'
+        var p = CONFIG.prices || {}
+        iIn.value = String(p.input || 0)
+        iCache.value = String(p.cache || 0)
+        iOut.value = String(p.output || 0)
+        iShowPulse.checked = CONFIG.showPulse !== false
+      },
+    }
+    return panelCtl
+  }
+
+  function openPanel() {
+    var ctl = buildPanel()
+    ctl.sync()
+    ctl.panel.classList.add('show')
+  }
+
+  /* ---------------------------------------------------------------- 数据 */
 
   function showToast(text) {
     if (!rootEl) return
@@ -163,6 +382,70 @@
     rootEl.toast.classList.add('show')
     clearTimeout(showToast._t)
     showToast._t = setTimeout(function () { rootEl.toast.classList.remove('show') }, 1800)
+  }
+
+  function formatTokens(n) {
+    var v = Number(n) || 0
+    if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B'
+    if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M'
+    if (v >= 1e3) return (v / 1e3).toFixed(1) + 'K'
+    return String(Math.round(v))
+  }
+
+  function hhmm(ts) {
+    if (!ts) return '--:--'
+    var d = new Date(Number(ts))
+    if (isNaN(d.getTime())) return '--:--'
+    var p = function (n) { return n < 10 ? '0' + n : String(n) }
+    return p(d.getHours()) + ':' + p(d.getMinutes())
+  }
+
+  function renderValue() {
+    if (!rootEl) return
+    var u = lastUsage
+    var curSym = CONFIG.currency || '¥'
+    if (CONFIG.valueMode === 'manual' || !u) {
+      rootEl.cur.textContent = curSym
+      rootEl.num.textContent = String(CONFIG.balance || '').replace(/^¥\s*/, '')
+      rootEl.foot.textContent = CONFIG.footerText
+      return
+    }
+    if (u.priced && u.cost > 0) {
+      rootEl.cur.textContent = curSym
+      rootEl.num.textContent = Number(u.cost).toFixed(2)
+    } else {
+      rootEl.cur.textContent = 'TOK'
+      rootEl.num.textContent = formatTokens(u.tokens ? u.tokens.total : 0)
+    }
+    rootEl.foot.textContent = (u.requests || 0) + ' 次请求 · 更新 ' + hhmm(u.updatedAt)
+  }
+
+  function applyConfig(cfg) {
+    if (!cfg) return
+    CONFIG = Object.assign({}, CONFIG, cfg)
+    if (!rootEl) return
+    rootEl.statusText.textContent = CONFIG.status
+    rootEl.blabelText.textContent = CONFIG.balanceLabel
+    if (rootEl.canvas) rootEl.canvas.style.display = CONFIG.showPulse === false ? 'none' : 'block'
+    renderValue()
+  }
+
+  function refreshConfig() {
+    fetch(API + '/config.json', { cache: 'no-store' })
+      .then(function (r) { return r.json() })
+      .then(function (j) { if (j && j.ok && j.config) applyConfig(j.config) })
+      .catch(function () {})
+  }
+
+  function refreshUsage() {
+    fetch(API + '/usage.json', { cache: 'no-store' })
+      .then(function (r) { return r.json() })
+      .then(function (j) {
+        if (!j || !j.ok || !j.usage) return
+        lastUsage = j.usage
+        renderValue()
+      })
+      .catch(function () {})
   }
 
   function upload(file) {
@@ -183,18 +466,7 @@
       .catch(function (err) { showToast('上传失败：' + (err && err.message ? err.message : err)) })
   }
 
-  function refreshConfig() {
-    fetch(API + '/config.json', { cache: 'no-store' })
-      .then(function (r) { return r.json() })
-      .then(function (j) {
-        if (!j || !j.ok || !j.config) return
-        CONFIG = Object.assign({}, CONFIG, j.config)
-        if (!rootEl) return
-        rootEl.statusText.textContent = CONFIG.status
-        rootEl.num.textContent = String(CONFIG.balance || '').replace(/^¥\s*/, '')
-      })
-      .catch(function () {})
-  }
+  /* ---------------------------------------------------------------- 视图 */
 
   var WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
   function pad(n) { return n < 10 ? '0' + n : String(n) }
@@ -222,6 +494,7 @@
   function draw() {
     raf = requestAnimationFrame(draw)
     if (!canvas || !ctx2d) return
+    if (CONFIG.showPulse === false) return
     setupCanvas()
     if (!ctx2d) return
     var dpr = Math.min(window.devicePixelRatio || 1, 2)
@@ -321,7 +594,9 @@
     setInterval(tick, 400)
     try { setupCanvas(); draw() } catch (err) {}
     refreshConfig()
+    refreshUsage()
     setInterval(refreshConfig, 60000)
+    setInterval(refreshUsage, 3000)
   }
 
   function boot() {

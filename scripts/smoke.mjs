@@ -16,6 +16,7 @@ const plugin = mod.default
 const routes = new Map()
 const rows = []
 const taps = []
+const listeners = new Map()
 
 function fakeReq(method, headers, body) {
   const req = new EventEmitter()
@@ -38,8 +39,9 @@ function fakeRes() {
 }
 const root = {
   on(event, cb) {
-    if (event === 'webserver/index-inject') { cb(rows) }
-    return () => {}
+    if (event === 'webserver/index-inject') { cb(rows); return () => {} }
+    listeners.set(event, cb)
+    return () => listeners.delete(event)
   },
   effect(fn) { const d = fn(); return () => { if (typeof d === 'function') d() } },
   inject(deps, cb) {
@@ -60,10 +62,11 @@ if (rows.length !== 1 || !String(rows[0].text).includes('/dsh-sidebar/widget.js'
 else ok('桌面端 index-inject 行已登记')
 if (!taps.length || !String(taps[0]('<html><body></body></html>')).includes('/dsh-sidebar/widget.js')) fail('tapIndex')
 else ok('web 端 tapIndex 注入正常')
-for (const p of ['/dsh-sidebar/widget.js', '/dsh-sidebar/config.json', '/dsh-sidebar/avatar']) {
+for (const p of ['/dsh-sidebar/widget.js', '/dsh-sidebar/config.json', '/dsh-sidebar/usage.json', '/dsh-sidebar/avatar']) {
   if (!routes.has(p)) fail('missing route ' + p)
 }
-if (!process.exitCode) ok('三条路由已注册')
+if (!process.exitCode) ok('四条路由已注册')
+if (typeof listeners.get('session/event') !== 'function') fail('session/event 未订阅')
 
 const call = async (p, method, body, headers) => {
   const res = fakeRes()
@@ -80,10 +83,30 @@ res = await call('/dsh-sidebar/config.json', 'GET')
 if (res.status !== 200 || !JSON.parse(res.body.toString('utf8')).ok) fail('config get')
 else ok('config.json 读取正常')
 
-res = await call('/dsh-sidebar/config.json', 'POST', Buffer.from(JSON.stringify({ balance: '¥42.00', status: '写代码中…' })))
+res = await call('/dsh-sidebar/config.json', 'POST', Buffer.from(JSON.stringify({ status: '写代码中…', valueMode: 'usage', prices: { input: 2, cache: 0.5, output: 8 } })))
 const cfg = JSON.parse(res.body.toString('utf8'))
-if (!cfg.ok || cfg.config.balance !== '¥42.00') fail('config post: ' + res.body.toString('utf8'))
-else ok('config.json 写入正常')
+if (!cfg.ok || cfg.config.status !== '写代码中…' || cfg.config.prices.output !== 8) fail('config post: ' + res.body.toString('utf8'))
+else ok('config.json 写入正常（含单价归一化）')
+
+// 用量：喂三条 assistant/message 事件，验证累加与计价
+const emit = listeners.get('session/event')
+const msg = (turn, input, cache, output) => ({ type: 'assistant/message', data: { turn, usage: { inputTokens: input, cacheReadTokens: cache, outputTokens: output }, message: { source: { model: 'deepseek-v4.1-flash-1017' } } } })
+emit({ id: 's1' }, msg(1, 1000, 200, 300))
+emit({ id: 's1' }, msg(1, 2000, 100, 400))
+emit({ id: 's1' }, { type: 'turn/end', data: { turn: 1 } })
+
+res = await call('/dsh-sidebar/usage.json', 'GET')
+const usage = JSON.parse(res.body.toString('utf8')).usage
+if (usage.tokens.total !== 4000 || usage.tokens.input !== 3000 || usage.tokens.cache !== 300 || usage.tokens.output !== 700) fail('usage accumulate: ' + JSON.stringify(usage))
+else ok('用量累加正确（3000 in / 300 cache / 700 out）')
+const expectCost = (3000 * 2 + 300 * 0.5 + 700 * 8) / 1e6
+if (Math.abs(usage.cost - Math.round(expectCost * 10000) / 10000) > 1e-6) fail('usage cost: ' + usage.cost + ' vs ' + expectCost)
+else ok('单价折算正确（¥' + usage.cost + '）')
+
+res = await call('/dsh-sidebar/usage.json', 'POST', Buffer.from(JSON.stringify({ reset: true })))
+const reset = JSON.parse(res.body.toString('utf8')).usage
+if (reset.tokens.total !== 0 || reset.requests !== 0) fail('usage reset: ' + JSON.stringify(reset))
+else ok('用量重置正常')
 
 res = await call('/dsh-sidebar/avatar', 'GET')
 if (res.status !== 200 || res.headers['Content-Type'] !== 'image/png') fail('avatar default: ' + res.status)

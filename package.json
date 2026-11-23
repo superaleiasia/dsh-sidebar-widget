@@ -1,12 +1,45 @@
 {
   "name": "dsh-sidebar-widget",
-  "version": "0.1.0",
-  "description": "DSH 左侧栏挂件：可换头像、时钟、状态、心电图与 Token 余额",
+  "version": "0.2.0",
+  "description": "DSH 左侧栏挂件：可换头像、时钟、状态、心电图，以及真实 Token 用量（可折金额）",
   "type": "module",
   "main": "lib/index.js",
-  "files": ["lib", "assets", "cordis.patch.yml", "README.md", "LICENSE"],
-  "keywords": ["dsh", "dsh-plugin", "sidebar", "widget"],
+  "exports": {
+    ".": "./lib/index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "sidebar",
+    "widget",
+    "token-usage"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/superaleiasia/dsh-sidebar-widget.git"
+  },
+  "homepage": "https://github.com/superaleiasia/dsh-sidebar-widget#readme",
+  "bugs": {
+    "url": "https://github.com/superaleiasia/dsh-sidebar-widget/issues"
+  },
+  "author": "superaleiasia",
   "license": "MIT",
+  "scripts": {
+    "test": "node scripts/smoke.mjs"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
