@@ -1,0 +1,7 @@
+# dsh-sidebar-widget：把侧栏挂件塞进 DSH 的左侧栏。
+# 安装（本机）：
+#   dsh plugin --profile desktop add link:F:\生活废话\sidebar-widget
+# 或手动在 profile 的 cordis.patch.yml 里加同样的 insert 条目。
+- insert:
+    - id: dsh-sidebar-widget
+      name: dsh-sidebar-widget
