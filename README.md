@@ -7,12 +7,17 @@
 ## 安装
 
 ```bash
-# 从 npm 安装
+# 从 npm 安装（发布后可用）
 dsh plugin --profile desktop add dsh-sidebar-widget
+
+# 直接从 GitHub 装（无需 npm 账号；已验证）
+dsh plugin --profile desktop add https://codeload.github.com/superaleiasia/dsh-sidebar-widget/tar.gz/refs/heads/main
 
 # 或本机目录安装（开发用）
 dsh plugin --profile desktop add link:F:\\生活废话\\sidebar-widget
 ```
+
+GitHub 装的是当时 main 的快照，仓库更新后重跑同一条命令即可升级。
 
 手动安装等价于三件事：
 
