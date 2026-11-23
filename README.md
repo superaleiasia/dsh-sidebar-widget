@@ -74,7 +74,7 @@ dsh plugin --profile desktop add link:F:\\path\\to\\dsh-sidebar-widget
 - 卡片上的倒计时显示「峰价中 · 41:11 后转谷价」这样的剩余时间。
 - 用量按自然日归零，存在 `~/.dsh/sidebar-widget/usage.json`。
 
-价格以 [DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) 为准；法定节假日表每年 11 月按国务院安排更新一次。
+价格以 [DeepSeek 官方文档](https://api-docs.deepseek.com/zh-cn/quick_start/pricing) 为准；法定节假日表每年 11 月安排更新一次。
 
 ## 常见问题
 
